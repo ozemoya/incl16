@@ -40,3 +40,9 @@ A UI timeout does not cancel Firestore. Unknown saves preserve the ID, block rep
 ## Assistance
 
 Codex assisted with implementation, writing and automated verification. Evidence describes actual executed tests and explicitly labels injected faults and fixtures. No teammate contributions or peer observations are claimed.
+
+## Verified build
+
+Flutter 3.47.2, Dart 3.13.2; Android 17 AdaptiveFocus Pixel 4 emulator. Verified implementation and test commit: `ce0dd90a7b9d7421662cfe9be22c9b2df63c63d2`. The packaging commit adds these results without changing the app. Use `git rev-parse HEAD` for the current packaging revision.
+
+All T01-T12 checks passed against deployed cloud services where required. A separate fresh-process test passed same-ID retrieval and confirmed exactly two correct selections produce 2/5. Static analysis found no issues and both model tests passed. Release APK 1.0.0+1 built, installed successfully, and opened its sign-in screen on Android 17. The release omits test credentials and fault controls. APK SHA256: `9b7ebc61306d9d7d134a82ed5d696e8021efcfa74bd59370f1e999995e056b38`.

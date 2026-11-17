@@ -51,3 +51,6 @@ app.*.map.json
 /submission/
 *-debug.log
 /evidence/
+
+/build_evidence.py
+/redact_evidence.py
