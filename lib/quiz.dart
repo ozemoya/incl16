@@ -14,6 +14,13 @@ class ScienceQuestion {
 
   final String text;
   final String correctAnswer;
+  static String decode(String value) {
+    try {
+      return Uri.decodeComponent(value);
+    } on ArgumentError {
+      throw const FormatException('Invalid URL encoding.');
+    }
+  }
 
   factory ScienceQuestion.fromJson(Object? value) {
     if (value is! Map<String, dynamic> ||
@@ -24,16 +31,13 @@ class ScienceQuestion {
     }
 
     if (value['category'] is! String ||
-        Uri.decodeComponent(value['category'] as String) !=
-            'Science & Nature' ||
+        decode(value['category'] as String) != 'Science & Nature' ||
         value['difficulty'] != 'medium' ||
         value['type'] != 'boolean') {
       throw const FormatException('Unexpected science question metadata.');
     }
-    final text = Uri.decodeComponent(value['question'] as String);
-    final correctAnswer = Uri.decodeComponent(
-      value['correct_answer'] as String,
-    );
+    final text = decode(value['question'] as String);
+    final correctAnswer = decode(value['correct_answer'] as String);
     final incorrectAnswers = value['incorrect_answers'] as List;
     if (text.trim().isEmpty ||
         (correctAnswer != 'True' && correctAnswer != 'False') ||
@@ -41,9 +45,7 @@ class ScienceQuestion {
         incorrectAnswers.first is! String) {
       throw const FormatException('Invalid true-or-false question.');
     }
-    final incorrectAnswer = Uri.decodeComponent(
-      incorrectAnswers.first as String,
-    );
+    final incorrectAnswer = decode(incorrectAnswers.first as String);
     if ((incorrectAnswer != 'True' && incorrectAnswer != 'False') ||
         incorrectAnswer == correctAnswer) {
       throw const FormatException('Invalid true-or-false answers.');
@@ -368,14 +370,16 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
       final record = await repository
           .verify(uid, id, null)
           .timeout(const Duration(seconds: 10));
-      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid)
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid) {
         setState(
           () => lookupStatus =
               'Cloud verified: ${record.data()!['correctCount']} / 5; submittedAt ${record.data()!['submittedAt'].toDate().toUtc()}; cache=false; pending=false',
         );
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => lookupStatus = 'Server retrieval failed: $error');
+      }
     }
   }
 
