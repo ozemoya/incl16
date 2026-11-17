@@ -31,8 +31,12 @@ void main() {
       );
     }
 
+    bool surfaceConverted = false;
     Future<void> shot(String name) async {
-      await binding.convertFlutterSurfaceToImage();
+      if (!surfaceConverted) {
+        await binding.convertFlutterSurfaceToImage();
+        surfaceConverted = true;
+      }
       await tester.pump();
       await binding.takeScreenshot(name);
     }
@@ -308,6 +312,7 @@ void main() {
       'PASS explicitly labeled development hook produced distinct unavailable and resource-exhausted messages after real commits',
     );
     debugPrint('RESTART_RECORD=$newId');
-    binding.reportData = {'restartId': newId};
+    binding.reportData?['restartId'] = newId;
   }, timeout: const Timeout(Duration(minutes: 8)));
 }
+

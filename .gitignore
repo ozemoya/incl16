@@ -50,3 +50,4 @@ app.*.map.json
 /android/.kotlin/
 /submission/
 *-debug.log
+/evidence/
