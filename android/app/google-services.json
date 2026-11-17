@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "535583377402",
+    "project_id": "science-signal-16-myles",
+    "storage_bucket": "science-signal-16-myles.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:535583377402:android:156c311c7880bdeedf8643",
+        "android_client_info": {
+          "package_name": "com.example.science_signal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6-KTLNiGYLTYzCB4-fSyOlDb7oT3cm_0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

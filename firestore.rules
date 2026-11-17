@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/attempts/{roundId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['schemaVersion','variant','categoryId','questionCount','correctCount','submittedAt'])
+        && request.resource.data.keys().hasOnly(['schemaVersion','variant','categoryId','questionCount','correctCount','submittedAt'])
+        && request.resource.data.schemaVersion is int && request.resource.data.schemaVersion == 1
+        && request.resource.data.variant == 'B'
+        && request.resource.data.categoryId is int && request.resource.data.categoryId == 17
+        && request.resource.data.questionCount is int && request.resource.data.questionCount == 5
+        && request.resource.data.correctCount is int
+        && request.resource.data.correctCount >= 0 && request.resource.data.correctCount <= 5
+        && request.resource.data.submittedAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}
