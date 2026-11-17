@@ -9,25 +9,6 @@ import 'attempt_repository.dart';
 
 import 'package:http/http.dart' as http;
 
-void main() {
-  runApp(const ScienceSignalApp());
-}
-
-class ScienceSignalApp extends StatelessWidget {
-  const ScienceSignalApp({super.key, this.client});
-  final http.Client? client;
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Science Signal',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
-      home: ScienceQuizScreen(client: client),
-    );
-  }
-}
-
 class ScienceQuestion {
   const ScienceQuestion({required this.text, required this.correctAnswer});
 
@@ -100,6 +81,12 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
   bool _sending = false;
   bool verified = false;
   bool _loading = true;
+  bool _requestPending = false;
+  Future<void>? _commitPending;
+  bool _verifyPending = false;
+  final lookup = TextEditingController();
+  String lookupStatus = '';
+  String? fault;
 
   int get _score => _answers
       .asMap()
@@ -116,6 +103,8 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
 
   DateTime? lastRequest;
   Future<void> _loadQuestions() async {
+    if (_requestPending) return;
+    _requestPending = true;
     final previous = lastRequest;
     if (previous != null) {
       final remaining =
@@ -136,6 +125,7 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
       unresolved = false;
       cloudStatus = 'Ready to submit';
       _answers.clear();
+      _questionIndex = 0;
       verified = false;
     });
 
@@ -167,6 +157,8 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
       _showError('The request failed: ${error.message}');
     } on FormatException catch (error) {
       _showError('Could not load questions: ${error.message}');
+    } finally {
+      _requestPending = false;
     }
   }
 
@@ -179,7 +171,7 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
   }
 
   Future<void> save({bool readOnly = false}) async {
-    if (_sending || roundId == null) return;
+    if (_sending || _verifyPending || roundId == null) return;
     final owner = uid;
     final id = roundId!;
     setState(() {
@@ -189,20 +181,57 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
     });
     try {
       if (!readOnly) {
-        await repository
-            .commit(owner, id, _score)
-            .timeout(const Duration(seconds: 10));
+        final pending = repository.commit(owner, id, _score);
+        _commitPending = pending;
+        pending.then(
+          (_) {
+            _commitPending = null;
+          },
+          onError: (Object e) {
+            _commitPending = null;
+          },
+        );
+        await pending.timeout(const Duration(seconds: 10));
         acknowledged = true;
       }
-      await repository
-          .verify(owner, id, _score)
-          .timeout(const Duration(seconds: 10));
+      if (acknowledged && fault != null) {
+        repository.injectedVerificationError = fault;
+        fault = null;
+      }
+      _verifyPending = true;
+      final pending = repository.verify(owner, id, _score);
+      pending.then(
+        (_) {
+          _verifyPending = false;
+        },
+        onError: (Object e) {
+          _verifyPending = false;
+        },
+      );
+      await pending.timeout(const Duration(seconds: 10));
       if (!mounted ||
           FirebaseAuth.instance.currentUser?.uid != owner ||
-          roundId != id)
+          roundId != id) {
         return;
+      }
       setState(() {
         cloudStatus = 'Cloud verified';
+        unresolved = false;
+        verified = true;
+      });
+    } on AttemptMissing {
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != owner) return;
+      setState(() {
+        unresolved = _commitPending != null;
+        cloudStatus = unresolved
+            ? 'No record yet; original operation remains pending. Verify again.'
+            : 'Server confirmed no record. Retry save with this same ID.';
+      });
+    } on AttemptCollision {
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != owner) return;
+      setState(() {
+        cloudStatus =
+            'ID collision: existing score differs. Original record preserved.';
         unresolved = false;
         verified = true;
       });
@@ -214,8 +243,9 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
             : 'Save outcome unknown. Reconcile this ID before retrying. $error',
       );
     } finally {
-      if (mounted && FirebaseAuth.instance.currentUser?.uid == owner)
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == owner) {
         setState(() => _sending = false);
+      }
     }
   }
 
@@ -269,9 +299,8 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
 
   Widget _results() {
     final payload = jsonEncode({
-      'score': _score,
-      'total': _questions.length,
-      'category': 'Science & Nature',
+      ...repository.fields(_score),
+      'submittedAt': 'Verified resolved server timestamp',
     });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -281,7 +310,25 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         Text('Round ID: $roundId'),
-        Text(cloudStatus),
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: verified ? Colors.teal.shade50 : Colors.amber.shade100,
+          child: Text(cloudStatus, key: const Key('cloud-status')),
+        ),
+        if (AttemptRepository.testHooks && !acknowledged && !verified)
+          DropdownButton<String>(
+            value: fault,
+            hint: const Text('Development-only fault injection'),
+            items: ['permission-denied', 'unavailable', 'resource-exhausted']
+                .map(
+                  (code) => DropdownMenuItem(
+                    value: code,
+                    child: Text('INJECT: $code'),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => fault = value),
+          ),
         if (unresolved)
           OutlinedButton(
             onPressed: _sending ? null : () => save(readOnly: true),
@@ -313,9 +360,45 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
     );
   }
 
+  Future<void> retrieve() async {
+    final id = lookup.text.trim();
+    if (id.isEmpty || id.contains('/')) return;
+    setState(() => lookupStatus = 'Reading server...');
+    try {
+      final record = await repository
+          .verify(uid, id, null)
+          .timeout(const Duration(seconds: 10));
+      if (mounted && FirebaseAuth.instance.currentUser?.uid == uid)
+        setState(
+          () => lookupStatus =
+              'Cloud verified: ${record.data()!['correctCount']} / 5; submittedAt ${record.data()!['submittedAt'].toDate().toUtc()}; cache=false; pending=false',
+        );
+    } catch (error) {
+      if (mounted)
+        setState(() => lookupStatus = 'Server retrieval failed: $error');
+    }
+  }
+
+  @override
+  void dispose() {
+    lookup.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Science Signal')),
+    appBar: AppBar(
+      title: const Text('Science Signal B'),
+      actions: [
+        IconButton(
+          tooltip: 'Sign out',
+          onPressed: unresolved || _sending
+              ? null
+              : () => FirebaseAuth.instance.signOut(),
+          icon: const Icon(Icons.logout),
+        ),
+      ],
+    ),
     body: SafeArea(
       child: _loading
           ? const Center(
@@ -326,6 +409,22 @@ class _ScienceQuizScreenState extends State<ScienceQuizScreen> {
           : ListView(
               padding: const EdgeInsets.all(24),
               children: [
+                ExpansionTile(
+                  title: const Text('Retrieve a saved round'),
+                  children: [
+                    TextField(
+                      controller: lookup,
+                      decoration: const InputDecoration(
+                        labelText: 'Saved round ID',
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: retrieve,
+                      child: const Text('Read from server'),
+                    ),
+                    Text(lookupStatus),
+                  ],
+                ),
                 if (_error case final error?) ...[
                   Text(error),
                   FilledButton(

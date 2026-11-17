@@ -2,9 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AttemptCollision implements Exception {}
 
+class AttemptMissing implements Exception {}
+
 class AttemptRepository {
   AttemptRepository(this.firestore);
   final FirebaseFirestore firestore;
+  static const testHooks = bool.fromEnvironment('ENABLE_TEST_HOOKS');
   String? injectedVerificationError;
 
   DocumentReference<Map<String, dynamic>> reference(String uid, String id) =>
@@ -46,7 +49,7 @@ class AttemptRepository {
   ) async {
     final fault = injectedVerificationError;
     injectedVerificationError = null;
-    if (fault != null) {
+    if (testHooks && fault != null) {
       throw FirebaseException(
         plugin: 'cloud_firestore',
         code: fault,
@@ -58,13 +61,16 @@ class AttemptRepository {
       id,
     ).get(const GetOptions(source: Source.server));
     final data = snapshot.data();
-    if (data == null) throw StateError('No server record found');
+    if (data == null) throw AttemptMissing();
     if (data.length != 6 ||
         (score != null && !matches(data, score)) ||
         data['schemaVersion'] != 1 ||
+        data['schemaVersion'] is! int ||
         data['variant'] != 'B' ||
         data['categoryId'] != 17 ||
+        data['categoryId'] is! int ||
         data['questionCount'] != 5 ||
+        data['questionCount'] is! int ||
         data['correctCount'] is! int ||
         (data['correctCount'] as int) < 0 ||
         (data['correctCount'] as int) > 5 ||
